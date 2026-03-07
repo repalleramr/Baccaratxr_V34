@@ -32,7 +32,28 @@ s.banker[i]=normalizeTracker(s.banker[i]||blank(i),i);
 if(!s.ladder.length) buildLadder();
 }
 function save(){localStorage.setItem(STATE_KEY,JSON.stringify(s));}
-function buildLadder(){let prior=0; s.ladder=[]; for(let i=1;i<=60;i++){let b=Math.ceil(Math.max(s.settings.minBet,(s.settings.profitTarget+prior)/8)/s.settings.multiple)*s.settings.multiple; if(b>s.settings.maxBet) break; s.ladder.push(b); prior+=b;} let extra=Math.ceil(Math.max(s.settings.minBet,(s.settings.profitTarget+prior)/8)/s.settings.multiple)*s.settings.multiple; s.ladder.push(Math.min(extra,s.settings.maxBet));}
+
+function buildLadder(){
+let prior=0;
+s.ladder=[];
+for(let i=1;i<=75;i++){
+ let base=(s.settings.profitTarget+prior)/8;
+ let bet=Math.ceil(Math.max(s.settings.minBet,base)/s.settings.multiple)*s.settings.multiple;
+
+ // dynamic stabilizer
+ if(i>20 && i<=40){
+  bet=Math.round(bet*0.9/s.settings.multiple)*s.settings.multiple;
+ }
+ if(i>40){
+  bet=Math.round(bet*0.8/s.settings.multiple)*s.settings.multiple;
+ }
+
+ if(bet>s.settings.maxBet) bet=s.settings.maxBet;
+ s.ladder.push(bet);
+ prior+=bet;
+}
+}
+ let extra=Math.ceil(Math.max(s.settings.minBet,(s.settings.profitTarget+prior)/8)/s.settings.multiple)*s.settings.multiple; s.ladder.push(Math.min(extra,s.settings.maxBet));}
 function nextBet(t){if(t.recoveryMode){return t.recoveryStep<=5?Math.round(s.settings.maxBet/2):s.settings.maxBet;} return s.ladder[Math.min(t.misses,s.ladder.length-1)]||0;}
 function stepOf(t){return t.recoveryMode?('R'+t.recoveryStep):(t.misses+1)}
 function active(which){return Object.values(s[which]).filter(x=>x.status==='active');}
@@ -41,6 +62,8 @@ function queue(text,buttons){s.alerts.push({text,buttons}); save();}
 function modal(text,buttons){$('modalText').innerText=text; const box=$('modalActions'); box.innerHTML=''; buttons.forEach(btn=>{const b=document.createElement('button'); b.className='btn'+(btn.kind?' '+btn.kind:''); b.textContent=btn.label; b.onclick=()=>{$('modal').classList.add('hidden'); if(btn.onClick) btn.onClick();}; box.appendChild(b);}); $('modal').classList.remove('hidden');}
 function flush(){if(!s.alerts.length) return; const a=s.alerts.shift(); save(); modal(a.text,a.buttons||[{label:'OK'}]);}
 function flash(btn, cls){btn.classList.add(cls); setTimeout(()=>btn.classList.remove(cls),180);}
+function noActiveNumbersLeft(){return active('player').length===0 && active('banker').length===0;}
+
 function triggerCombinedAlerts(events){const wins=events.filter(e=>e.type==='win'); const caps=events.filter(e=>e.type==='cap'); const reacts=events.filter(e=>e.type==='react'); const r65=events.filter(e=>e.type==='r65'); if(wins.length===2){queue(msg(I18N.winDouble,{PX:wins[0].num,PS:wins[0].step,BX:wins[1].num,BS:wins[1].step}),[{label:'NICE!',kind:' gold'}]);} else if(wins.length===1){queue(msg(I18N.winSingle,{SIDE:wins[0].side,X:wins[0].num,S:wins[0].step,P:wins[0].profit}),[{label:'NICE!',kind:' gold'}]);} if(caps.length===2){queue(msg(I18N.capDouble,{PX:caps[0].num,BX:caps[1].num}),[{label:'OK BOSS',kind:' gold'}]);} else if(caps.length===1){queue(msg(I18N.capSingle,{SIDE:caps[0].side,X:caps[0].num}),[{label:'OK BOSS',kind:' gold'}]);} if(reacts.length===2){queue(msg(I18N.reactDouble,{PX:reacts[0].num,BX:reacts[1].num}),[{label:'LET’S GO',kind:' gold'}]);} else if(reacts.length===1){queue(msg(I18N.reactSingle,{SIDE:reacts[0].side,X:reacts[0].num}),[{label:'LET’S GO',kind:' gold'}]);} if(r65.length===2){queue(msg(I18N.round65Double,{PX:r65[0].num,BX:r65[1].num}),[{label:'ATTACK',kind:' gold'}]);} else if(r65.length===1){queue(msg(I18N.round65Single,{SIDE:r65[0].side,X:r65[0].num}),[{label:'ATTACK',kind:' gold'}]);}}
 function countHits(which,num){
 const key=which==='player'?'p':'b';
@@ -258,6 +281,7 @@ s.rounds.push({p:Number(p),b:Number(b),pNet:pr.net,bNet:br.net,total,bankroll:s.
 s.pending={player:null,banker:null};
 
 triggerCombinedAlerts(events);
+setTimeout(flush,10);
 queueLateRecoveryPrompts();
 
 save();
