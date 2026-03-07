@@ -9,7 +9,7 @@ function save(){localStorage.setItem(STATE_KEY,JSON.stringify(s));}
 function buildLadder(){let prior=0; s.ladder=[]; for(let i=1;i<=75;i++){ let b=Math.ceil(Math.max(s.settings.minBet,(s.settings.profitTarget+prior)/8)/s.settings.multiple)*s.settings.multiple; if(i>20 && i<=40){ b=Math.round(b*0.9/s.settings.multiple)*s.settings.multiple; } if(i>40){ b=Math.round(b*0.8/s.settings.multiple)*s.settings.multiple; } if(b>s.settings.maxBet) b=s.settings.maxBet; s.ladder.push(b); prior+=b; }}
 function nextBet(t){if(t.recoveryMode){return t.recoveryStep<=5?Math.round(s.settings.maxBet/2):s.settings.maxBet;} return s.ladder[Math.min(t.misses,s.ladder.length-1)]||0;}
 function stepOf(t){return t.recoveryMode?('R'+t.recoveryStep):(t.misses+1)}
-function active(which){return Object.values(s[which]).filter(x=>x.status==='active');}
+function active(which){return Object.values(s[which]).filter(t=>t.status==='active' && (!t.capHit || t.recoveryMode));}
 function targetReached(){return s.bankroll-s.settings.startingBankroll>=s.settings.targetAmount;}
 function queue(text,buttons){s.alerts.push({text,buttons}); save();}
 function modal(text,buttons){$('modalText').innerText=text; const box=$('modalActions'); box.innerHTML=''; buttons.forEach(btn=>{const b=document.createElement('button'); b.className='btn'+(btn.kind?' '+btn.kind:''); b.textContent=btn.label; b.onclick=()=>{$('modal').classList.add('hidden'); if(btn.onClick) btn.onClick();}; box.appendChild(b);}); $('modal').classList.remove('hidden');}
@@ -30,7 +30,105 @@ if(!t.reactDecisionAsked){
  queue(`🔁 BACK ON TRACK?\n\n${side} ${t.num} tried to come back after CAP.\n\nContinue = start betting this number from the NEXT round as a fresh active.\nQuit = no more betting on this number in this shoe.\n\n${advice.suggestion}\nSeen this shoe: ${advice.seen} time(s)\nEstimated rounds left: ${advice.roundsLeft}\n\n${advice.note}`,[{label:'Quit',kind:'',onClick:()=>quitLateRecovery(which,t.num)},{label:'Continue',kind:' gold',onClick:()=>activateLateRecovery(which,t.num,'react')}]);
 }
 }
-function processSide(which,result,events){const board=s[which]; const list=active(which); let net=0, exposure=list.reduce((a,t)=>a+nextBet(t),0); const target=board[result]; const isZero=Number(result)===0; const isDeadRound=isZero || (target && (target.status==='excluded' || (target.capHit && !target.recoveryMode && target.status!=='active'))); if(isDeadRound){list.forEach(t=>{const b=nextBet(t); net-=b; t.losses+=b; if(t.recoveryMode){t.recoveryStep+=1; if(t.recoveryStep>10){t.status='excluded'; t.recoveryMode=false;}} else {t.misses+=1; if(t.misses+1>s.ladder.length && !t.capHit){t.capHit=true; t.status='excluded'; events.push({type:'cap',side:which==='player'?'Player':'Banker',num:t.num});}}}); return {net,exposure};} if(target && target.status==='inactive' && !target.capHit){list.forEach(t=>{const b=nextBet(t); net-=b; t.losses+=b; if(t.recoveryMode){t.recoveryStep+=1; if(t.recoveryStep>10){t.status='excluded'; t.recoveryMode=false;}} else {t.misses+=1; if(t.misses+1>s.ladder.length && !t.capHit){t.capHit=true; t.status='excluded'; events.push({type:'cap',side:which==='player'?'Player':'Banker',num:t.num});}}}); target.status='active'; target.misses=0; target.losses=0; return {net,exposure};} if(target && target.status==='active'){list.forEach(t=>{const b=nextBet(t); if(t.num===Number(result)){net+=8*b; const profit=(8*b)-t.losses; events.push({type:'win',side:which==='player'?'Player':'Banker',num:t.num,step:(t.recoveryMode?t.recoveryStep:t.misses+1),profit}); t.closedProfit=profit; t.status='excluded'; t.recoveryMode=false;} else {net-=b; t.losses+=b; if(t.recoveryMode){t.recoveryStep+=1; if(t.recoveryStep>10){t.status='excluded'; t.recoveryMode=false;}} else {t.misses+=1; if(t.misses+1>s.ladder.length && !t.capHit){t.capHit=true; t.status='excluded'; events.push({type:'cap',side:which==='player'?'Player':'Banker',num:t.num});}}}}); return {net,exposure};} return {net,exposure};}
+function processSide(which,result,events){
+const board=s[which];
+const list=active(which);
+let net=0, exposure=list.reduce((a,t)=>a+nextBet(t),0);
+
+const target=board[result];
+const isZero=Number(result)===0;
+
+// Excluded repeat or capped non-recovery repeat should behave like zero.
+const isDeadRound = isZero || (target && (target.status==='excluded' || (target.capHit && !target.recoveryMode)));
+
+if(isDeadRound){
+list.forEach(t=>{
+const b=nextBet(t);
+net-=b;
+t.losses+=b;
+
+if(t.recoveryMode){
+t.recoveryStep+=1;
+if(t.recoveryStep>10){
+t.status='excluded';
+t.recoveryMode=false;
+}
+}else{
+t.misses+=1;
+if(t.misses+1>s.ladder.length && !t.capHit){
+t.capHit=true;
+t.status='excluded';
+events.push({type:'cap',side:which==='player'?'Player':'Banker',num:t.num});
+}
+}
+});
+return {net,exposure};
+}
+
+if(target && target.status==='inactive' && !target.capHit){
+list.forEach(t=>{
+const b=nextBet(t);
+net-=b;
+t.losses+=b;
+
+if(t.recoveryMode){
+t.recoveryStep+=1;
+if(t.recoveryStep>10){
+t.status='excluded';
+t.recoveryMode=false;
+}
+}else{
+t.misses+=1;
+if(t.misses+1>s.ladder.length && !t.capHit){
+t.capHit=true;
+t.status='excluded';
+events.push({type:'cap',side:which==='player'?'Player':'Banker',num:t.num});
+}
+}
+});
+
+target.status='active';
+target.misses=0;
+target.losses=0;
+return {net,exposure};
+}
+
+if(target && target.status==='active'){
+list.forEach(t=>{
+const b=nextBet(t);
+
+if(t.num===Number(result)){
+net+=8*b;
+const profit=(8*b)-t.losses;
+events.push({type:'win',side:which==='player'?'Player':'Banker',num:t.num,step:(t.recoveryMode?t.recoveryStep:t.misses+1),profit});
+t.closedProfit=profit;
+t.status='excluded';
+t.recoveryMode=false;
+}else{
+net-=b;
+t.losses+=b;
+
+if(t.recoveryMode){
+t.recoveryStep+=1;
+if(t.recoveryStep>10){
+t.status='excluded';
+t.recoveryMode=false;
+}
+}else{
+t.misses+=1;
+if(t.misses+1>s.ladder.length && !t.capHit){
+t.capHit=true;
+t.status='excluded';
+events.push({type:'cap',side:which==='player'?'Player':'Banker',num:t.num});
+}
+}
+}
+});
+return {net,exposure};
+}
+
+return {net,exposure};
+} if(target && target.status==='inactive' && !target.capHit){list.forEach(t=>{const b=nextBet(t); net-=b; t.losses+=b; if(t.recoveryMode){t.recoveryStep+=1; if(t.recoveryStep>10){t.status='excluded'; t.recoveryMode=false;}} else {t.misses+=1; if(t.misses+1>s.ladder.length && !t.capHit){t.capHit=true; t.status='excluded'; events.push({type:'cap',side:which==='player'?'Player':'Banker',num:t.num});}}}); target.status='active'; target.misses=0; target.losses=0; return {net,exposure};} if(target && target.status==='active'){list.forEach(t=>{const b=nextBet(t); if(t.num===Number(result)){net+=8*b; const profit=(8*b)-t.losses; events.push({type:'win',side:which==='player'?'Player':'Banker',num:t.num,step:(t.recoveryMode?t.recoveryStep:t.misses+1),profit}); t.closedProfit=profit; t.status='excluded'; t.recoveryMode=false;} else {net-=b; t.losses+=b; if(t.recoveryMode){t.recoveryStep+=1; if(t.recoveryStep>10){t.status='excluded'; t.recoveryMode=false;}} else {t.misses+=1; if(t.misses+1>s.ladder.length && !t.capHit){t.capHit=true; t.status='excluded'; events.push({type:'cap',side:which==='player'?'Player':'Banker',num:t.num});}}}}); return {net,exposure};} return {net,exposure};}
 function commit(p,b){const roundNo=s.rounds.length+1; const events=[]; maybeActivateRepeat('player',Number(p),events); maybeActivateRepeat('banker',Number(b),events); if(roundNo>=65){startRound65Recovery('player',events); startRound65Recovery('banker',events);} const pr=processSide('player',Number(p),events), br=processSide('banker',Number(b),events); const total=pr.net+br.net; s.bankroll+=total; s.rounds.push({p:Number(p),b:Number(b),pNet:pr.net,bNet:br.net,total,bankroll:s.bankroll}); s.pending={player:null,banker:null}; triggerCombinedAlerts(events); save(); render(); if(targetReached()) queue(I18N.target,[{label:'Close Shoe',kind:' gold',onClick:()=>clearShoe(false)},{label:'Keep Playing'}]); setTimeout(flush,20);}
 function setPending(which,val){s.pending[which]=val; if(s.pending.player!==null&&s.pending.banker!==null) commit(s.pending.player,s.pending.banker); save(); renderPlay();}
 function buildGrouped(which){const list=active(which); if(!list.length) return '—'; const groups={}; list.forEach(t=>{const b=nextBet(t); if(!groups[b]) groups[b]=[]; groups[b].push(`${t.num}(S${stepOf(t)})`);}); return Object.keys(groups).sort((a,b)=>Number(b)-Number(a)).map(b=>`${kfmt(b)} on ${groups[b].join(', ')}`).join(' | ');}
