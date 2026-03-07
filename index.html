@@ -1,15 +1,91 @@
-
 <!doctype html>
-<html>
+<html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Baccaratxr V34</title>
-<link rel="manifest" href="manifest.json">
-<link rel="stylesheet" href="styles.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Baccaratxr V34</title>
+  <meta name="theme-color" content="#0b0f17">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icons/favicon.ico">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-<h1>Baccaratxr V34</h1>
-<p>Tracker build placeholder (UI files included).</p>
-</body>
-</html>
+<div id="modal" class="modal hidden"><div class="modal-card"><div id="modalText" class="modal-text"></div><div id="modalActions" class="modal-actions"></div></div></div>
+<div id="toast" class="toast hidden"></div>
+<main class="app">
+  <section class="screen active" data-screen="play">
+    <section class="card hero">
+      <div class="hero-top"><div><div class="app-name">Baccarat Tracker</div><div class="app-sub">V34 Real</div></div><div class="start-mini">Start ₹<span id="startText">30000</span></div></div>
+      <div class="hero-label">LIVE BANKROLL</div>
+      <div class="hero-bankroll">₹<span id="bankrollText">30000</span></div>
+    </section>
+
+    <section class="card keypad-card">
+      <div class="head-row"><div class="title">Player</div><div class="muted">Pending: <span id="pendingPlayer">—</span></div></div>
+      <div class="micro" id="playerMicro">—</div>
+      <div class="keypad" id="playerPad"></div>
+    </section>
+
+    <section class="card keypad-card">
+      <div class="head-row"><div class="title">Banker</div><div class="muted">Pending: <span id="pendingBanker">—</span></div></div>
+      <div class="micro" id="bankerMicro">—</div>
+      <div class="keypad" id="bankerPad"></div>
+    </section>
+
+    <section class="card compact">
+      <div class="grid2">
+        <div class="round-card"><div class="tiny">Round</div><div class="round-big" id="roundCount">0</div></div>
+        <div class="stack">
+          <div class="stats p"><span>P:</span><span id="pActive">0</span><span>N:</span><span id="pNext">₹0</span></div>
+          <div class="stats b"><span>B:</span><span id="bActive">0</span><span>N:</span><span id="bNext">₹0</span></div>
+        </div>
+      </div>
+    </section>
+
+    <div class="actions"><button id="undoBtn" class="pill danger">Undo Last</button><button id="clearBtn" class="pill">Clear Shoe</button><button id="newBtn" class="pill gold">New Shoe</button></div>
+
+    <section class="card"><div class="title">Next Round Risk</div><div class="risk-row"><div class="bar"><div id="riskFill" class="fill"></div></div><div id="riskText" class="muted">LOW</div></div></section>
+    <section class="card"><div class="title">Last 5 Results</div><div id="last5">—</div></section>
+    <section class="card"><div class="title">Exposure</div><div class="triple"><div>P: <span id="pExposure">₹0</span></div><div>B: <span id="bExposure">₹0</span></div><div>T: <span id="tExposure">₹0</span></div></div></section>
+  </section>
+
+  <section class="screen" data-screen="board">
+    <section class="card"><div class="title">Player Board</div><div id="playerBoard" class="tiles"></div></section>
+    <section class="card"><div class="title">Banker Board</div><div id="bankerBoard" class="tiles"></div></section>
+  </section>
+
+  <section class="screen" data-screen="history">
+    <section class="card">
+      <div class="head-row"><div class="title">History</div><div><button id="csvBtn" class="small-pill">CSV</button> <button id="pdfBtn" class="small-pill">PDF</button></div></div>
+      <div class="table-wrap"><table><thead><tr><th>#</th><th>P</th><th>B</th><th>P Net</th><th>B Net</th><th>Total</th><th>Bankroll</th></tr></thead><tbody id="historyBody"><tr><td colspan="7" class="muted">No rounds yet</td></tr></tbody></table></div>
+    </section>
+  </section>
+
+  <section class="screen" data-screen="analytics">
+    <section class="card"><div class="title">Next Shoe Suggestion</div><div id="nextShoeBox" class="suggest">No cleared shoe summary yet.</div></section>
+  </section>
+
+  <section class="screen" data-screen="ladder">
+    <section class="card"><div class="head-row"><div class="title">Ladder</div><button id="autoBuildBtn" class="small-pill">Auto Build</button></div><div id="ladderList"></div></section>
+  </section>
+
+  <section class="screen" data-screen="settings">
+    <section class="card">
+      <div class="title">Settings</div>
+      <div class="fields">
+        <label>Starting Bankroll<input id="startInput" type="number" value="30000"></label>
+        <label>Target Amount<input id="targetInput" type="number" value="5000"></label>
+        <label>Min Bet<input id="minInput" type="number" value="100"></label>
+        <label>Max Bet<input id="maxInput" type="number" value="3000"></label>
+        <label>Multiple<input id="multInput" type="number" value="100"></label>
+        <label>Profit Target / Number<input id="profitInput" type="number" value="500"></label>
+        <label>Safety Reserve<input id="safetyInput" type="number" value="20000"></label>
+      </div>
+      <button id="saveSettingsBtn" class="pill gold full">Save Settings</button>
+    </section>
+  </section>
+</main>
+<nav class="tabs"><button class="tab active" data-tab="play">Play</button><button class="tab" data-tab="board">Board</button><button class="tab" data-tab="history">History</button><button class="tab" data-tab="analytics">Analytics</button><button class="tab" data-tab="ladder">Ladder</button><button class="tab" data-tab="settings">Settings</button></nav>
+<script src="app.js"></script>
+</body></html>
