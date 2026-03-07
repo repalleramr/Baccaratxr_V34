@@ -18,7 +18,132 @@ function flash(btn, cls){btn.classList.add(cls); setTimeout(()=>btn.classList.re
 function triggerCombinedAlerts(events){const wins=events.filter(e=>e.type==='win'); const caps=events.filter(e=>e.type==='cap'); const reacts=events.filter(e=>e.type==='react'); const r65=events.filter(e=>e.type==='r65'); if(wins.length===2){queue(msg(I18N.winDouble,{PX:wins[0].num,PS:wins[0].step,BX:wins[1].num,BS:wins[1].step}),[{label:'NICE!',kind:' gold'}]);} else if(wins.length===1){queue(msg(I18N.winSingle,{SIDE:wins[0].side,X:wins[0].num,S:wins[0].step,P:wins[0].profit}),[{label:'NICE!',kind:' gold'}]);} if(caps.length===2){queue(msg(I18N.capDouble,{PX:caps[0].num,BX:caps[1].num}),[{label:'OK BOSS',kind:' gold'}]);} else if(caps.length===1){queue(msg(I18N.capSingle,{SIDE:caps[0].side,X:caps[0].num}),[{label:'OK BOSS',kind:' gold'}]);} if(reacts.length===2){queue(msg(I18N.reactDouble,{PX:reacts[0].num,BX:reacts[1].num}),[{label:'LET’S GO',kind:' gold'}]);} else if(reacts.length===1){queue(msg(I18N.reactSingle,{SIDE:reacts[0].side,X:reacts[0].num}),[{label:'LET’S GO',kind:' gold'}]);} if(r65.length===2){queue(msg(I18N.round65Double,{PX:r65[0].num,BX:r65[1].num}),[{label:'ATTACK',kind:' gold'}]);} else if(r65.length===1){queue(msg(I18N.round65Single,{SIDE:r65[0].side,X:r65[0].num}),[{label:'ATTACK',kind:' gold'}]);}}
 function startRound65Recovery(which, events){if(targetReached()) return; Object.values(s[which]).forEach(t=>{if(t.capHit && !t.secondRepeatTriggered && !t.recoveryMode && t.status==='excluded'){t.recoveryMode=true; t.recoveryStep=1; t.status='active'; t.secondRepeatTriggered=true; events.push({type:'r65',side:which==='player'?'Player':'Banker',num:t.num});}})}
 function maybeActivateRepeat(which, result, events){if(!(result>=1&&result<=9)) return; const t=s[which][result]; if(t.capHit && !t.secondRepeatTriggered && !targetReached()){t.recoveryMode=true; t.recoveryStep=1; t.status='active'; t.secondRepeatTriggered=true; events.push({type:'react',side:which==='player'?'Player':'Banker',num:t.num});}}
-function processSide(which,result,events){const board=s[which]; const list=active(which); let net=0, exposure=list.reduce((a,t)=>a+nextBet(t),0); const isZero=Number(result)===0; if(isZero){list.forEach(t=>{const b=nextBet(t); net-=b; t.losses+=b; if(t.recoveryMode){t.recoveryStep+=1; if(t.recoveryStep>10){t.status='excluded'; t.recoveryMode=false;}} else {t.misses+=1; if(t.misses+1>s.ladder.length && !t.capHit){t.capHit=true; t.status='excluded'; events.push({type:'cap',side:which==='player'?'Player':'Banker',num:t.num});}}}); return {net,exposure};} const target=board[result]; if(target && target.status==='inactive' && !target.capHit){list.forEach(t=>{const b=nextBet(t); net-=b; t.losses+=b; if(t.recoveryMode){t.recoveryStep+=1; if(t.recoveryStep>10){t.status='excluded'; t.recoveryMode=false;}} else {t.misses+=1; if(t.misses+1>s.ladder.length && !t.capHit){t.capHit=true; t.status='excluded'; events.push({type:'cap',side:which==='player'?'Player':'Banker',num:t.num});}}}); target.status='active'; target.misses=0; target.losses=0; return {net,exposure};} if(target && target.status==='active'){list.forEach(t=>{const b=nextBet(t); if(t.num===Number(result)){net+=8*b; const profit=(8*b)-t.losses; events.push({type:'win',side:which==='player'?'Player':'Banker',num:t.num,step:(t.recoveryMode?t.recoveryStep:t.misses+1),profit}); t.closedProfit=profit; t.status='excluded'; t.recoveryMode=false;} else {net-=b; t.losses+=b; if(t.recoveryMode){t.recoveryStep+=1; if(t.recoveryStep>10){t.status='excluded'; t.recoveryMode=false;}} else {t.misses+=1; if(t.misses+1>s.ladder.length && !t.capHit){t.capHit=true; t.status='excluded'; events.push({type:'cap',side:which==='player'?'Player':'Banker',num:t.num});}}}}); return {net,exposure};} return {net,exposure};}
+function processSide(which, result, events) {
+  const board = s[which];
+  const list = active(which);
+  let net = 0;
+  let exposure = list.reduce((a, t) => a + nextBet(t), 0);
+
+  const target = board[result];
+  const isZero = Number(result) === 0;
+
+  // FIX:
+  // If result is zero OR already-excluded/cap-hit number,
+  // treat it like a dead round and advance all active ladders.
+  const isDeadRound =
+    isZero ||
+    (target && (target.status === 'excluded' || target.capHit));
+
+  if (isDeadRound) {
+    list.forEach(t => {
+      const b = nextBet(t);
+      net -= b;
+      t.losses += b;
+
+      if (t.recoveryMode) {
+        t.recoveryStep += 1;
+        if (t.recoveryStep > 10) {
+          t.status = 'excluded';
+          t.recoveryMode = false;
+        }
+      } else {
+        t.misses += 1;
+        if (t.misses + 1 > s.ladder.length && !t.capHit) {
+          t.capHit = true;
+          t.status = 'excluded';
+          events.push({
+            type: 'cap',
+            side: which === 'player' ? 'Player' : 'Banker',
+            num: t.num
+          });
+        }
+      }
+    });
+
+    return { net, exposure };
+  }
+
+  if (target && target.status === 'inactive' && !target.capHit) {
+    list.forEach(t => {
+      const b = nextBet(t);
+      net -= b;
+      t.losses += b;
+
+      if (t.recoveryMode) {
+        t.recoveryStep += 1;
+        if (t.recoveryStep > 10) {
+          t.status = 'excluded';
+          t.recoveryMode = false;
+        }
+      } else {
+        t.misses += 1;
+        if (t.misses + 1 > s.ladder.length && !t.capHit) {
+          t.capHit = true;
+          t.status = 'excluded';
+          events.push({
+            type: 'cap',
+            side: which === 'player' ? 'Player' : 'Banker',
+            num: t.num
+          });
+        }
+      }
+    });
+
+    target.status = 'active';
+    target.misses = 0;
+    target.losses = 0;
+    return { net, exposure };
+  }
+
+  if (target && target.status === 'active') {
+    list.forEach(t => {
+      const b = nextBet(t);
+
+      if (t.num === Number(result)) {
+        net += 8 * b;
+        const profit = (8 * b) - t.losses;
+
+        events.push({
+          type: 'win',
+          side: which === 'player' ? 'Player' : 'Banker',
+          num: t.num,
+          step: (t.recoveryMode ? t.recoveryStep : t.misses + 1),
+          profit
+        });
+
+        t.closedProfit = profit;
+        t.status = 'excluded';
+        t.recoveryMode = false;
+      } else {
+        net -= b;
+        t.losses += b;
+
+        if (t.recoveryMode) {
+          t.recoveryStep += 1;
+          if (t.recoveryStep > 10) {
+            t.status = 'excluded';
+            t.recoveryMode = false;
+          }
+        } else {
+          t.misses += 1;
+          if (t.misses + 1 > s.ladder.length && !t.capHit) {
+            t.capHit = true;
+            t.status = 'excluded';
+            events.push({
+              type: 'cap',
+              side: which === 'player' ? 'Player' : 'Banker',
+              num: t.num
+            });
+          }
+        }
+      }
+    });
+
+    return { net, exposure };
+  }
+
+  return { net, exposure };
+}  const target=board[result]; if(target && target.status==='inactive' && !target.capHit){list.forEach(t=>{const b=nextBet(t); net-=b; t.losses+=b; if(t.recoveryMode){t.recoveryStep+=1; if(t.recoveryStep>10){t.status='excluded'; t.recoveryMode=false;}} else {t.misses+=1; if(t.misses+1>s.ladder.length && !t.capHit){t.capHit=true; t.status='excluded'; events.push({type:'cap',side:which==='player'?'Player':'Banker',num:t.num});}}}); target.status='active'; target.misses=0; target.losses=0; return {net,exposure};} if(target && target.status==='active'){list.forEach(t=>{const b=nextBet(t); if(t.num===Number(result)){net+=8*b; const profit=(8*b)-t.losses; events.push({type:'win',side:which==='player'?'Player':'Banker',num:t.num,step:(t.recoveryMode?t.recoveryStep:t.misses+1),profit}); t.closedProfit=profit; t.status='excluded'; t.recoveryMode=false;} else {net-=b; t.losses+=b; if(t.recoveryMode){t.recoveryStep+=1; if(t.recoveryStep>10){t.status='excluded'; t.recoveryMode=false;}} else {t.misses+=1; if(t.misses+1>s.ladder.length && !t.capHit){t.capHit=true; t.status='excluded'; events.push({type:'cap',side:which==='player'?'Player':'Banker',num:t.num});}}}}); return {net,exposure};} return {net,exposure};}
 function commit(p,b){const roundNo=s.rounds.length+1; const events=[]; maybeActivateRepeat('player',Number(p),events); maybeActivateRepeat('banker',Number(b),events); if(roundNo>=65){startRound65Recovery('player',events); startRound65Recovery('banker',events);} const pr=processSide('player',Number(p),events), br=processSide('banker',Number(b),events); const total=pr.net+br.net; s.bankroll+=total; s.rounds.push({p:Number(p),b:Number(b),pNet:pr.net,bNet:br.net,total,bankroll:s.bankroll}); s.pending={player:null,banker:null}; triggerCombinedAlerts(events); save(); render(); if(targetReached()) queue(I18N.target,[{label:'Close Shoe',kind:' gold',onClick:()=>clearShoe(false)},{label:'Keep Playing'}]); setTimeout(flush,20);}
 function setPending(which,val){s.pending[which]=val; if(s.pending.player!==null&&s.pending.banker!==null) commit(s.pending.player,s.pending.banker); save(); renderPlay();}
 function buildGrouped(which){const list=active(which); if(!list.length) return '—'; const groups={}; list.forEach(t=>{const b=nextBet(t); if(!groups[b]) groups[b]=[]; groups[b].push(`${t.num}(S${stepOf(t)})`);}); return Object.keys(groups).sort((a,b)=>Number(b)-Number(a)).map(b=>`${kfmt(b)} on ${groups[b].join(', ')}`).join(' | ');}
