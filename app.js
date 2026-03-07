@@ -1,0 +1,130 @@
+const STATE_KEY='baccaratxr_v34_final';
+const blank=n=>({num:n,status:'inactive',misses:0,losses:0,closedProfit:0,capHit:false,recoveryMode:false,recoveryStep:0,secondRepeatTriggered:false});
+const mkSide=()=>{const o={}; for(let i=1;i<=9;i++) o[i]=blank(i); return o;};
+const DEF={settings:{startingBankroll:30000,targetAmount:5000,targetPercent:16.67,minBet:100,maxBet:3000,multiple:100,profitTarget:500,safetyReserve:20000,capStopsNormalBetting:true},bankroll:30000,pending:{player:null,banker:null},rounds:[],lastShoeSummary:null,player:mkSide(),banker:mkSide(),ladder:[],alerts:[]};
+let s; const $=id=>document.getElementById(id); const money=v=>'₹'+Number(v||0).toFixed(0); const kfmt=v=>{v=Number(v||0); if(v>=1000){let x=(v/1000).toFixed(1); if(x.endsWith('.0')) x=x.slice(0,-2); return x+'k';} return String(v);}; const msg=(t,m)=>Object.keys(m).reduce((a,k)=>a.replaceAll('{'+k+'}',m[k]),t);
+const I18N={clearWarn:'⚠ Clear Current Shoe?\n\nAll round history and active numbers will be reset.',winSingle:'💰 CASHED IN!\n\n{SIDE} {X} hit at Step {S}.\n\nProfit locked: ₹{P}\n\nOne soldier down.\nMoving to the next target 🎯',winDouble:'🔥 DOUBLE STRIKE!\n\nPlayer {PX} hit at Step {PS}.\nBanker {BX} hit at Step {BS}.\n\nTwo targets smashed in the same round.\nBeautiful chaos 🎯',capSingle:'🚧 CAP HIT, BOSS!\n\n{SIDE} {X} reached cap.\n\nNow excluded.\nNo more chasing. Cool heads only 😎',capDouble:'🚧 DOUBLE CAP, BOSS!\n\nPlayer {PX} reached cap.\nBanker {BX} reached cap.\n\nBoth ladders hit the roof.\nCool heads only 😎',reactSingle:'♻ BACK IN THE HUNT!\n\n{SIDE} {X} is active again after CAP.\n\nSecond repeat mode started.\nOne more shot before shoe close 😎',reactDouble:'♻ DOUBLE REACTIVATION!\n\nPlayer {PX} and Banker {BX} are back after CAP.\n\nSecond repeat mode started on both sides.\nLate shoe drama begins 😎',round65Single:'⏰ ROUND 65 MODE ON!\n\n{SIDE} {X} didn’t repeat again,\nbut late-shoe recovery has started now.\n\nFinal hunt before shoe close 😎',round65Double:'⏰ ROUND 65 MODE ON!\n\nPlayer {PX} and Banker {BX} didn’t repeat again,\nbut late-shoe recovery has started now.\n\nFinal chase activated 😎',target:'🎉 BOOM! TARGET SMASHED!\n\nYou didn’t gamble…\nYou executed the plan.\n\nProfit locked. Discipline level: PRO.\n\nClose the shoe, take the win,\nand let the casino breathe for a moment 😎'};
+function load(){const raw=localStorage.getItem(STATE_KEY); s=raw?JSON.parse(raw):JSON.parse(JSON.stringify(DEF)); if(!s.settings) s.settings=JSON.parse(JSON.stringify(DEF.settings)); if(typeof s.settings.capStopsNormalBetting!=='boolean') s.settings.capStopsNormalBetting=true; if(!s.ladder.length) buildLadder();}
+function save(){localStorage.setItem(STATE_KEY,JSON.stringify(s));}
+
+function buildLadder(){
+let prior=0;
+s.ladder=[];
+
+for(let i=1;i<=75;i++){
+
+let base=(s.settings.profitTarget+prior)/8;
+let b=Math.ceil(Math.max(s.settings.minBet,base)/s.settings.multiple)*s.settings.multiple;
+
+// Dynamic stabilizer
+if(i>20 && i<=40){
+b=Math.round(b*0.9/s.settings.multiple)*s.settings.multiple;
+}
+if(i>40){
+b=Math.round(b*0.8/s.settings.multiple)*s.settings.multiple;
+}
+
+if(b>s.settings.maxBet) b=s.settings.maxBet;
+
+s.ladder.push(b);
+prior+=b;
+}
+}
+function nextBet(t){if(t.recoveryMode){return t.recoveryStep<=5?Math.round(s.settings.maxBet/2):s.settings.maxBet;} return s.ladder[Math.min(t.misses,s.ladder.length-1)]||0;}
+function stepOf(t){return t.recoveryMode?('R'+t.recoveryStep):(t.misses+1)}
+function active(which){return Object.values(s[which]).filter(t=>t.status==='active' && (!s.settings.capStopsNormalBetting || !t.capHit || t.recoveryMode));}
+function targetReached(){return s.bankroll-s.settings.startingBankroll>=s.settings.targetAmount;}
+function queue(text,buttons){s.alerts.push({text,buttons}); save();}
+function modal(text,buttons){$('modalText').innerText=text; const box=$('modalActions'); box.innerHTML=''; buttons.forEach(btn=>{const b=document.createElement('button'); b.className='btn'+(btn.kind?' '+btn.kind:''); b.textContent=btn.label; b.onclick=()=>{$('modal').classList.add('hidden'); if(btn.onClick) btn.onClick();}; box.appendChild(b);}); $('modal').classList.remove('hidden');}
+function flush(){if(!s.alerts.length) return; const a=s.alerts.shift(); save(); modal(a.text,a.buttons||[{label:'OK'}]);}
+function flash(btn, cls){btn.classList.add(cls); setTimeout(()=>btn.classList.remove(cls),180);}
+
+function ensureCapToggleUI(){
+ const fields=document.querySelector('.screen[data-screen="settings"] .fields');
+ if(!fields) return;
+ if($('capStopToggle')) return;
+
+ const label=document.createElement('label');
+ label.style.display='flex';
+ label.style.alignItems='center';
+ label.style.justifyContent='space-between';
+ label.style.gap='12px';
+ label.style.width='100%';
+ label.innerHTML='<span>Stop after CAP (normal betting)</span>';
+
+ const input=document.createElement('input');
+ input.id='capStopToggle';
+ input.type='checkbox';
+ input.style.width='20px';
+ input.style.height='20px';
+
+ label.appendChild(input);
+ fields.appendChild(label);
+}
+
+function noActiveNumbersLeft(){
+return active('player').length===0 && active('banker').length===0;
+}
+
+function triggerCombinedAlerts(events){const wins=events.filter(e=>e.type==='win'); const caps=events.filter(e=>e.type==='cap'); const reacts=events.filter(e=>e.type==='react'); const r65=events.filter(e=>e.type==='r65'); if(wins.length===2){queue(msg(I18N.winDouble,{PX:wins[0].num,PS:wins[0].step,BX:wins[1].num,BS:wins[1].step}),[{label:'NICE!',kind:' gold'}]);} else if(wins.length===1){queue(msg(I18N.winSingle,{SIDE:wins[0].side,X:wins[0].num,S:wins[0].step,P:wins[0].profit}),[{label:'NICE!',kind:' gold'}]);} if(caps.length===2){queue(msg(I18N.capDouble,{PX:caps[0].num,BX:caps[1].num}),[{label:'OK BOSS',kind:' gold'}]);} else if(caps.length===1){queue(msg(I18N.capSingle,{SIDE:caps[0].side,X:caps[0].num}),[{label:'OK BOSS',kind:' gold'}]);} if(reacts.length===2){queue(msg(I18N.reactDouble,{PX:reacts[0].num,BX:reacts[1].num}),[{label:'LET’S GO',kind:' gold'}]);} else if(reacts.length===1){queue(msg(I18N.reactSingle,{SIDE:reacts[0].side,X:reacts[0].num}),[{label:'LET’S GO',kind:' gold'}]);} if(r65.length===2){queue(msg(I18N.round65Double,{PX:r65[0].num,BX:r65[1].num}),[{label:'ATTACK',kind:' gold'}]);} else if(r65.length===1){queue(msg(I18N.round65Single,{SIDE:r65[0].side,X:r65[0].num}),[{label:'ATTACK',kind:' gold'}]);}}
+function startRound65Recovery(which, events){if(targetReached()) return; Object.values(s[which]).forEach(t=>{if(t.capHit && !t.secondRepeatTriggered && !t.recoveryMode && t.status==='excluded'){t.recoveryMode=true; t.recoveryStep=1; t.status='active'; t.secondRepeatTriggered=true; events.push({type:'r65',side:which==='player'?'Player':'Banker',num:t.num});}})}
+function maybeActivateRepeat(which, result, events){if(!(result>=1&&result<=9)) return; const t=s[which][result]; if(t.capHit && !t.secondRepeatTriggered && !targetReached()){t.recoveryMode=true; t.recoveryStep=1; t.status='active'; t.secondRepeatTriggered=true; events.push({type:'react',side:which==='player'?'Player':'Banker',num:t.num});}}
+function processSide(which,result,events){const board=s[which]; const list=active(which); let net=0, exposure=list.reduce((a,t)=>a+nextBet(t),0); const isZero=Number(result)===0; if(isZero){list.forEach(t=>{const b=nextBet(t); net-=b; t.losses+=b; if(t.recoveryMode){t.recoveryStep+=1; if(t.recoveryStep>10){t.status='excluded'; t.recoveryMode=false;}} else {t.misses+=1; if(t.misses+1>s.ladder.length && !t.capHit){t.capHit=true; t.status='excluded'; events.push({type:'cap',side:which==='player'?'Player':'Banker',num:t.num});}}}); return {net,exposure};} const target=board[result]; if(target && target.status==='inactive' && !target.capHit){list.forEach(t=>{const b=nextBet(t); net-=b; t.losses+=b; if(t.recoveryMode){t.recoveryStep+=1; if(t.recoveryStep>10){t.status='excluded'; t.recoveryMode=false;}} else {t.misses+=1; if(t.misses+1>s.ladder.length && !t.capHit){t.capHit=true; t.status='excluded'; events.push({type:'cap',side:which==='player'?'Player':'Banker',num:t.num});}}}); target.status='active'; target.misses=0; target.losses=0; return {net,exposure};} if(target && target.status==='active'){list.forEach(t=>{const b=nextBet(t); if(t.num===Number(result)){net+=8*b; const profit=(8*b)-t.losses; events.push({type:'win',side:which==='player'?'Player':'Banker',num:t.num,step:(t.recoveryMode?t.recoveryStep:t.misses+1),profit}); t.closedProfit=profit; t.status='excluded'; t.recoveryMode=false;} else {net-=b; t.losses+=b; if(t.recoveryMode){t.recoveryStep+=1; if(t.recoveryStep>10){t.status='excluded'; t.recoveryMode=false;}} else {t.misses+=1; if(t.misses+1>s.ladder.length && !t.capHit){t.capHit=true; t.status='excluded'; events.push({type:'cap',side:which==='player'?'Player':'Banker',num:t.num});}}}}); return {net,exposure};} return {net,exposure};}
+function commit(p,b){
+const roundNo=s.rounds.length+1;
+const events=[];
+
+maybeActivateRepeat('player',Number(p),events);
+maybeActivateRepeat('banker',Number(b),events);
+
+const pr=processSide('player',Number(p),events), br=processSide('banker',Number(b),events);
+const total=pr.net+br.net;
+s.bankroll+=total;
+s.rounds.push({p:Number(p),b:Number(b),pNet:pr.net,bNet:br.net,total,bankroll:s.bankroll});
+s.pending={player:null,banker:null};
+
+triggerCombinedAlerts(events);
+setTimeout(flush,10);
+queueLateRecoveryPrompts();
+
+save();
+render();
+
+// If all numbers finished (including second-stage fresh ones), end shoe automatically
+if(noActiveNumbersLeft()){
+const finalNet=s.bankroll - s.settings.startingBankroll;
+const sign=finalNet>=0?'+':'';
+queue(
+`🏁 SHOE COMPLETE
+
+All active numbers finished.
+
+Final Profit/Loss: ${sign}${money(finalNet)}
+Final Bankroll: ${money(s.bankroll)}
+Rounds Played: ${s.rounds.length}`,
+[{label:'Close Shoe',kind:' gold',onClick:()=>clearShoe(false)}]
+);
+}
+else if(targetReached()){
+queue(I18N.target,[{label:'Close Shoe',kind:' gold',onClick:()=>clearShoe(false)},{label:'Keep Playing'}]);
+}
+
+setTimeout(flush,20);
+}
+function setPending(which,val){s.pending[which]=val; if(s.pending.player!==null&&s.pending.banker!==null) commit(s.pending.player,s.pending.banker); save(); renderPlay();}
+function buildGrouped(which){const list=active(which); if(!list.length) return '—'; const groups={}; list.forEach(t=>{const b=nextBet(t); if(!groups[b]) groups[b]=[]; groups[b].push(`${t.num}(S${stepOf(t)})`);}); return Object.keys(groups).sort((a,b)=>Number(b)-Number(a)).map(b=>`${kfmt(b)} on ${groups[b].join(', ')}`).join(' | ');}
+function renderPlay(){ $('startText').textContent=s.settings.startingBankroll; $('bankrollText').textContent=s.bankroll; const p=active('player'), b=active('banker'); const pExp=p.reduce((a,t)=>a+nextBet(t),0), bExp=b.reduce((a,t)=>a+nextBet(t),0); $('playerMicro').textContent=p.length?p.map(t=>`${t.num} S${stepOf(t)} ${kfmt(nextBet(t))}`).join('  '):'—'; $('bankerMicro').textContent=b.length?b.map(t=>`${t.num} S${stepOf(t)} ${kfmt(nextBet(t))}`).join('  '):'—'; $('playerGrouped').textContent=buildGrouped('player'); $('bankerGrouped').textContent=buildGrouped('banker'); $('totalGrouped').textContent=kfmt(pExp+bExp); $('roundCount').textContent=s.rounds.length; $('pActive').textContent=p.length; $('bActive').textContent=b.length; $('pNext').textContent=money(pExp); $('bNext').textContent=money(bExp); $('pExposure').textContent=money(pExp); $('bExposure').textContent=money(bExp); $('tExposure').textContent=money(pExp+bExp); $('last5').textContent=s.rounds.length?s.rounds.slice(-5).map(r=>`P${r.p}-B${r.b}`).join('  '):'—'; const risk=Math.min(100,((pExp+bExp)/Math.max(1,s.bankroll))*100); $('riskFill').style.width=Math.max(4,risk)+'%'; $('riskFill').style.background=risk<10?'#2fd07a':risk<25?'#f0c450':'#ef5d66'; $('riskText').textContent=risk<10?'LOW':risk<25?'MED':'HIGH';}
+function tileHTML(t){let cls='inactive', state='INACTIVE', bet='LOCKED'; if(t.status==='active'){cls='active-t'; state=t.recoveryMode?'ATTACK':'ACTIVE'; bet=`S${stepOf(t)} • ${money(nextBet(t))}`;} else if(t.capHit){cls='cap'; state='CAP HIT'; bet=t.secondRepeatTriggered?'USED':'WAITING';} else if(t.status==='excluded'){cls='excluded'; state='EXCLUDED'; bet=t.closedProfit?`WIN ${money(t.closedProfit)}`:'LOCKED';} return `<div class="tile ${cls}"><div class="num">${t.num}</div><div class="state">${state}</div><div class="bet">${bet}</div></div>`;}
+function renderBoard(){ $('playerBoard').innerHTML=Array.from({length:9},(_,i)=>tileHTML(s.player[i+1])).join(''); $('bankerBoard').innerHTML=Array.from({length:9},(_,i)=>tileHTML(s.banker[i+1])).join(''); }
+function renderHistory(){ const body=$('historyBody'); if(!s.rounds.length){body.innerHTML='<tr><td colspan="7" class="muted">No rounds yet</td></tr>'; return;} body.innerHTML=[...s.rounds].reverse().map((r,idx)=>`<tr><td>${s.rounds.length-idx}</td><td>${r.p}</td><td>${r.b}</td><td>${money(r.pNet)}</td><td>${money(r.bNet)}</td><td>${money(r.total)}</td><td>${money(r.bankroll)}</td></tr>`).join(''); }
+function renderAnalytics(){ $('aRounds').textContent=s.rounds.length; $('aBankroll').textContent=money(s.bankroll); const pExp=active('player').reduce((a,t)=>a+nextBet(t),0), bExp=active('banker').reduce((a,t)=>a+nextBet(t),0), exp=pExp+bExp; $('volatilityText').textContent=exp<500?'LOW':exp<2000?'MED':'HIGH'; $('attackModeText').textContent=Object.values(s.player).concat(Object.values(s.banker)).some(t=>t.recoveryMode)?'Attack':'Normal'; $('hotZone').textContent=s.rounds.length<5?'Step 1–3':s.rounds.length<12?'Step 4–7':'Step 8+'; $('pressureScore').textContent=exp<500?'Low':exp<2000?'Medium':'High'; $('safetySignal').textContent=s.bankroll < s.settings.startingBankroll/2 ? 'Warning' : 'Safe'; if(!s.lastShoeSummary){$('nextShoeBox').innerHTML='<div class="muted">No cleared shoe summary yet.</div>'; return;} const x=s.lastShoeSummary; $('nextShoeBox').innerHTML=`<div class="suggest-row"><span>Start</span><span>${money(x.base)}</span></div><div class="suggest-row"><span>${x.type==='profit'?'Profit':'Loss'}</span><span>${money(x.delta)}</span></div><div class="suggest-row"><span>Safety</span><span>${money(x.safety)}</span></div><div class="suggest-row"><strong>Suggested</strong><strong>${money(x.suggested)}</strong></div>`; }
+function renderLadder(){ const wrap=$('ladderList'); wrap.innerHTML=''; let prev=0; s.ladder.forEach((bet,i)=>{const row=document.createElement('div'); row.className='ladder-row'; row.innerHTML=`<div>${i+1}</div><input value="${bet}" data-i="${i}"><div>${money(8*bet-prev)}</div>`; wrap.appendChild(row); prev+=bet;}); const inputs=[...wrap.querySelectorAll('input')]; inputs.forEach((inp,idx)=>{inp.onfocus=()=>inp.select(); inp.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault(); const n=inputs[idx+1]; if(n){n.focus(); n.select();} else inp.blur();}}; inp.oninput=()=>{s.ladder[idx]=Number(inp.value||0); save(); let p=0; inputs.forEach((x,i)=>{const v=Number(x.value||0); s.ladder[i]=v; wrap.children[i].children[2].textContent=money(8*v-p); p+=v;});};}); }
+function renderSettings(){ ensureCapToggleUI(); $('startInput').value=s.settings.startingBankroll; $('targetAmountInput').value=s.settings.targetAmount; $('targetPercentInput').value=s.settings.targetPercent; $('minInput').value=s.settings.minBet; $('maxInput').value=s.settings.maxBet; $('multipleInput').value=s.settings.multiple; $('profitInput').value=s.settings.profitTarget; $('safetyInput').value=s.settings.safetyReserve; if($('capStopToggle')) $('capStopToggle').checked=!!s.settings.capStopsNormalBetting; }
+function render(){ renderPlay(); renderBoard(); renderHistory(); renderAnalytics(); renderLadder(); renderSettings(); }
+function closeSummary(store=true){ const delta=s.bankroll-s.settings.startingBankroll, type=delta>=0?'profit':'loss', suggested=type==='profit'?s.settings.startingBankroll+s.settings.safetyReserve:s.settings.startingBankroll+Math.abs(delta)+s.settings.safetyReserve; if(store) s.lastShoeSummary={type,base:s.settings.startingBankroll,delta:Math.abs(delta),safety:s.settings.safetyReserve,suggested}; }
+function clearShoe(withSummary=true){ if(withSummary) closeSummary(true); s.bankroll=s.settings.startingBankroll; s.rounds=[]; s.pending={player:null,banker:null}; s.player=mkSide(); s.banker=mkSide(); save(); render(); }
+function rebuildFromRounds(){ const old=JSON.parse(JSON.stringify(s.rounds)); s.bankroll=s.settings.startingBankroll; s.rounds=[]; s.pending={player:null,banker:null}; s.player=mkSide(); s.banker=mkSide(); s.alerts=[]; old.forEach(r=>commit(r.p,r.b)); }
+function saveSettings(){ s.settings.startingBankroll=Number($('startInput').value||30000); s.settings.targetAmount=Number($('targetAmountInput').value||5000); s.settings.targetPercent=Number($('targetPercentInput').value||16.67); s.settings.minBet=Number($('minInput').value||100); s.settings.maxBet=Number($('maxInput').value||3000); s.settings.multiple=Number($('multipleInput').value||100); s.settings.profitTarget=Number($('profitInput').value||500); s.settings.safetyReserve=Number($('safetyInput').value||20000); if($('capStopToggle')) s.settings.capStopsNormalBetting=$('capStopToggle').checked; if(!s.rounds.length) s.bankroll=s.settings.startingBankroll; buildLadder(); save(); render(); }
+function bind(){ ensureCapToggleUI(); [['playerPad','player'],['bankerPad','banker']].forEach(([id,which])=>{const wrap=$(id); [1,2,3,4,5,6,7,8,9,0].forEach(n=>{const b=document.createElement('button'); b.className='key '+which+(n===0?' key-zero':''); b.textContent=String(n); b.onclick=()=>{flash(b,which==='player'?'flash-player':'flash-banker'); setPending(which,n);}; wrap.appendChild(b);});}); document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active')); document.querySelectorAll('.screen').forEach(x=>x.classList.remove('active')); t.classList.add('active'); document.querySelector(`.screen[data-screen="${t.dataset.tab}"]`).classList.add('active');}); $('undoBtn').onclick=()=>{if(!s.rounds.length) return; s.rounds.pop(); rebuildFromRounds();}; $('clearBtn').onclick=()=>modal(I18N.clearWarn,[{label:'Cancel'},{label:'OK',kind:' gold',onClick:()=>clearShoe(true)}]); $('newBtn').onclick=()=>clearShoe(false); $('autoBuildBtn').onclick=()=>{buildLadder(); save(); renderLadder();}; $('startInput').oninput=()=>{const start=Number($('startInput').value||1), amt=Number($('targetAmountInput').value||0); $('targetPercentInput').value=((amt/start)*100).toFixed(2);}; $('targetAmountInput').oninput=()=>{const start=Number($('startInput').value||1), amt=Number($('targetAmountInput').value||0); $('targetPercentInput').value=((amt/start)*100).toFixed(2);}; $('targetPercentInput').oninput=()=>{const start=Number($('startInput').value||0), pct=Number($('targetPercentInput').value||0); $('targetAmountInput').value=Math.round(start*pct/100);}; $('saveSettingsBtn').onclick=saveSettings; $('csvBtn').onclick=()=>{const csv=['Round,P,B,P Net,B Net,Total,Bankroll',...s.rounds.map((r,i)=>`${i+1},${r.p},${r.b},${r.pNet},${r.bNet},${r.total},${r.bankroll}`)].join('\n'); const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); a.download='baccarat_history.csv'; a.click();}; $('pdfBtn').onclick=()=>{const txt=['Baccarat Report',...s.rounds.map((r,i)=>`${i+1} P${r.p} B${r.b} ${r.total} ${r.bankroll}`)].join('\n'); const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([txt],{type:'application/pdf'})); a.download='baccarat_history.pdf'; a.click();}; }
+if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('./service-worker.js').catch(()=>{}));}
+document.addEventListener('DOMContentLoaded',()=>{load(); bind(); render();});
