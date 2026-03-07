@@ -1,5 +1,5 @@
 const STATE_KEY='baccaratxr_v34_final';
-const blank=n=>({num:n,status:'inactive',misses:0,losses:0,closedProfit:0,capHit:false,recoveryMode:false,recoveryStep:0,secondRepeatTriggered:false,lateDecisionAsked:false,lateQuit:false,reactDecisionAsked:false});
+const blank=n=>({num:n,status:'inactive',misses:0,losses:0,closedProfit:0,capHit:false,recoveryMode:false,recoveryStep:0,secondRepeatTriggered:false,lateDecisionAsked:false,lateQuit:false});
 const mkSide=()=>{const o={}; for(let i=1;i<=9;i++) o[i]=blank(i); return o;};
 const DEF={settings:{startingBankroll:30000,targetAmount:5000,targetPercent:16.67,minBet:100,maxBet:3000,multiple:100,profitTarget:500,safetyReserve:20000},bankroll:30000,pending:{player:null,banker:null},rounds:[],lastShoeSummary:null,player:mkSide(),banker:mkSide(),ladder:[],alerts:[]};
 let s; const $=id=>document.getElementById(id); const money=v=>'₹'+Number(v||0).toFixed(0); const kfmt=v=>{v=Number(v||0); if(v>=1000){let x=(v/1000).toFixed(1); if(x.endsWith('.0')) x=x.slice(0,-2); return x+'k';} return String(v);}; const msg=(t,m)=>Object.keys(m).reduce((a,k)=>a.replaceAll('{'+k+'}',m[k]),t);
@@ -16,7 +16,6 @@ if(typeof t.recoveryStep!=='number') t.recoveryStep=0;
 if(typeof t.secondRepeatTriggered!=='boolean') t.secondRepeatTriggered=false;
 if(typeof t.lateDecisionAsked!=='boolean') t.lateDecisionAsked=false;
 if(typeof t.lateQuit!=='boolean') t.lateQuit=false;
-if(typeof t.reactDecisionAsked!=='boolean') t.reactDecisionAsked=false;
 return t;
 }
 function load(){
@@ -42,9 +41,6 @@ function queue(text,buttons){s.alerts.push({text,buttons}); save();}
 function modal(text,buttons){$('modalText').innerText=text; const box=$('modalActions'); box.innerHTML=''; buttons.forEach(btn=>{const b=document.createElement('button'); b.className='btn'+(btn.kind?' '+btn.kind:''); b.textContent=btn.label; b.onclick=()=>{$('modal').classList.add('hidden'); if(btn.onClick) btn.onClick();}; box.appendChild(b);}); $('modal').classList.remove('hidden');}
 function flush(){if(!s.alerts.length) return; const a=s.alerts.shift(); save(); modal(a.text,a.buttons||[{label:'OK'}]);}
 function flash(btn, cls){btn.classList.add(cls); setTimeout(()=>btn.classList.remove(cls),180);}
-function noActiveNumbersLeft(){
-return active('player').length===0 && active('banker').length===0;
-}
 function triggerCombinedAlerts(events){const wins=events.filter(e=>e.type==='win'); const caps=events.filter(e=>e.type==='cap'); const reacts=events.filter(e=>e.type==='react'); const r65=events.filter(e=>e.type==='r65'); if(wins.length===2){queue(msg(I18N.winDouble,{PX:wins[0].num,PS:wins[0].step,BX:wins[1].num,BS:wins[1].step}),[{label:'NICE!',kind:' gold'}]);} else if(wins.length===1){queue(msg(I18N.winSingle,{SIDE:wins[0].side,X:wins[0].num,S:wins[0].step,P:wins[0].profit}),[{label:'NICE!',kind:' gold'}]);} if(caps.length===2){queue(msg(I18N.capDouble,{PX:caps[0].num,BX:caps[1].num}),[{label:'OK BOSS',kind:' gold'}]);} else if(caps.length===1){queue(msg(I18N.capSingle,{SIDE:caps[0].side,X:caps[0].num}),[{label:'OK BOSS',kind:' gold'}]);} if(reacts.length===2){queue(msg(I18N.reactDouble,{PX:reacts[0].num,BX:reacts[1].num}),[{label:'LET’S GO',kind:' gold'}]);} else if(reacts.length===1){queue(msg(I18N.reactSingle,{SIDE:reacts[0].side,X:reacts[0].num}),[{label:'LET’S GO',kind:' gold'}]);} if(r65.length===2){queue(msg(I18N.round65Double,{PX:r65[0].num,BX:r65[1].num}),[{label:'ATTACK',kind:' gold'}]);} else if(r65.length===1){queue(msg(I18N.round65Single,{SIDE:r65[0].side,X:r65[0].num}),[{label:'ATTACK',kind:' gold'}]);}}
 function countHits(which,num){
 const key=which==='player'?'p':'b';
@@ -75,26 +71,16 @@ return {seen,roundsLeft,suggestion,note};
 function activateLateRecovery(which,num,source){
 const t=s[which][num];
 if(!t || t.secondRepeatTriggered || targetReached()) return;
-
 t.recoveryMode=true;
 t.recoveryStep=1;
 t.status='active';
 t.secondRepeatTriggered=true;
 t.lateDecisionAsked=true;
 t.lateQuit=false;
-t.reactDecisionAsked=true;
-
-// Fresh second-stage cycle from next round.
 t.misses=0;
 t.losses=0;
 t.closedProfit=0;
-
-const side=which==='player'?'Player':'Banker';
-const title = source==='react' ? '🔁 BACK ON TRACK CONTINUED' : '♻ SECOND STAGE CONTINUED';
-queue(
-`${title}\n\n${side} ${num} will be treated as a FRESH ACTIVE from the NEXT round.\n\nIf it wins, it becomes excluded again. If it repeats after that, it will be treated like zero.`,
-[{label:'LET’S GO',kind:' gold'}]
-);
+queue(`♻ SECOND STAGE CONTINUED\n\n${which==='player'?'Player':'Banker'} ${num} will be bet from the NEXT round.\n\nRecovery stage is now armed.`,[{label:'LET’S GO',kind:' gold'}]);
 save();
 render();
 }
@@ -134,27 +120,25 @@ save();
 }
 function startRound65Recovery(which, events){
 // Kept only for compatibility.
-// Round-65 recovery is user-controlled through Continue / Quit prompts.
+// Round-65 recovery is now user-controlled through Continue / Quit prompts.
 return;
 }
 function maybeActivateRepeat(which, result, events){
 if(!(result>=1&&result<=9)) return;
 const t=s[which][result];
-if(!t || !t.capHit || t.secondRepeatTriggered || targetReached()) return;
-if(t.lateDecisionAsked || t.lateQuit) return;
+if(t.capHit && !t.secondRepeatTriggered && !targetReached()){
+t.recoveryMode=true;
+t.recoveryStep=1;
+t.status='active';
+t.secondRepeatTriggered=true;
 
-if(!t.reactDecisionAsked){
-t.reactDecisionAsked=true;
-const side=which==='player'?'Player':'Banker';
-const advice=lateRecoveryAdvice(which,t.num);
-queue(
-`🔁 BACK ON TRACK?\n\n${side} ${t.num} tried to come back after CAP.\n\nContinue = start betting this number from the NEXT round as a fresh active.\nQuit = no more betting on this number in this shoe.\n\n${advice.suggestion}\nSeen this shoe: ${advice.seen} time(s)\nEstimated rounds left: ${advice.roundsLeft}\n\n${advice.note}`,
-[
-{label:'Quit',kind:'',onClick:()=>quitLateRecovery(which,t.num)},
-{label:'Continue',kind:' gold',onClick:()=>activateLateRecovery(which,t.num,'react')}
-]
-);
-}
+// Start recovery as a fresh mini-cycle.
+// Old CAP chase losses should not distort recovery-stage profit/win display.
+t.misses=0;
+t.losses=0;
+t.closedProfit=0;
+
+events.push({type:'react',side:which==='player'?'Player':'Banker',num:t.num});
 }
 }
 function processSide(which,result,events){
@@ -165,8 +149,9 @@ let net=0, exposure=list.reduce((a,t)=>a+nextBet(t),0);
 const target=board[result];
 const isZero=Number(result)===0;
 
-// Treat zero, excluded repeats, and completed second-stage repeats like dead rounds.
-const isDeadRound = isZero || (target && target.status==='excluded');
+// Treat zero, excluded repeats, and cap-hit repeats like dead rounds.
+// That means all currently active numbers must advance one step.
+const isDeadRound = isZero || (target && (target.status==='excluded' || target.capHit));
 
 if(isDeadRound){
 list.forEach(t=>{
@@ -256,87 +241,15 @@ return {net,exposure};
 
 return {net,exposure};
 }
-}else{
-t.misses+=1;
-if(t.misses+1>s.ladder.length && !t.capHit){
-t.capHit=true;
-t.status='excluded';
-events.push({type:'cap',side:which==='player'?'Player':'Banker',num:t.num});
-}
-}
-});
-return {net,exposure};
-}
-
-if(target && target.status==='inactive' && !target.capHit){
-list.forEach(t=>{
-const b=nextBet(t);
-net-=b;
-t.losses+=b;
-
-if(t.recoveryMode){
-t.recoveryStep+=1;
-if(t.recoveryStep>10){
-t.status='excluded';
-t.recoveryMode=false;
-}
-}else{
-t.misses+=1;
-if(t.misses+1>s.ladder.length && !t.capHit){
-t.capHit=true;
-t.status='excluded';
-events.push({type:'cap',side:which==='player'?'Player':'Banker',num:t.num});
-}
-}
-});
-
-target.status='active';
-target.misses=0;
-target.losses=0;
-return {net,exposure};
-}
-
-if(target && target.status==='active'){
-list.forEach(t=>{
-const b=nextBet(t);
-
-if(t.num===Number(result)){
-net+=8*b;
-const profit=(8*b)-t.losses;
-events.push({type:'win',side:which==='player'?'Player':'Banker',num:t.num,step:(t.recoveryMode?t.recoveryStep:t.misses+1),profit});
-t.closedProfit=profit;
-t.status='excluded';
-t.recoveryMode=false;
-}else{
-net-=b;
-t.losses+=b;
-
-if(t.recoveryMode){
-t.recoveryStep+=1;
-if(t.recoveryStep>10){
-t.status='excluded';
-t.recoveryMode=false;
-}
-}else{
-t.misses+=1;
-if(t.misses+1>s.ladder.length && !t.capHit){
-t.capHit=true;
-t.status='excluded';
-events.push({type:'cap',side:which==='player'?'Player':'Banker',num:t.num});
-}
-}
-}
-});
-return {net,exposure};
-}
-
-return {net,exposure};
-}
 function commit(p,b){
+const roundNo=s.rounds.length+1;
 const events=[];
 
 maybeActivateRepeat('player',Number(p),events);
 maybeActivateRepeat('banker',Number(b),events);
+
+// Round 65+ no longer auto-starts second stage.
+// The app now asks permission after round 65 is reached.
 
 const pr=processSide('player',Number(p),events), br=processSide('banker',Number(b),events);
 const total=pr.net+br.net;
@@ -350,21 +263,43 @@ queueLateRecoveryPrompts();
 save();
 render();
 
-if(targetReached()){
-queue(I18N.target,[{label:'Close Shoe',kind:' gold',onClick:()=>clearShoe(false)},{label:'Keep Playing'}]);
-}else if(noActiveNumbersLeft()){
-const finalNet=s.bankroll - s.baseBankroll;
-const sign=finalNet>=0?'+':'';
-queue(
-`🏁 SHOE COMPLETE\n\nNo active numbers are left to play.\n\nFinal P/L: ${sign}${money(finalNet)}\nFinal Bankroll: ${money(s.bankroll)}\nRounds Played: ${s.rounds.length}`,
-[{label:'Close Shoe',kind:' gold',onClick:()=>clearShoe(false)}]
-);
-}
+if(targetReached()) queue(I18N.target,[{label:'Close Shoe',kind:' gold',onClick:()=>clearShoe(false)},{label:'Keep Playing'}]);
 setTimeout(flush,20);
 }
 function setPending(which,val){s.pending[which]=val; if(s.pending.player!==null&&s.pending.banker!==null) commit(s.pending.player,s.pending.banker); save(); renderPlay();}
 function buildGrouped(which){const list=active(which); if(!list.length) return '—'; const groups={}; list.forEach(t=>{const b=nextBet(t); if(!groups[b]) groups[b]=[]; groups[b].push(`${t.num}(S${stepOf(t)})`);}); return Object.keys(groups).sort((a,b)=>Number(b)-Number(a)).map(b=>`${kfmt(b)} on ${groups[b].join(', ')}`).join(' | ');}
-function renderPlay(){ $('startText').textContent=s.settings.startingBankroll; $('bankrollText').textContent=s.bankroll; const p=active('player'), b=active('banker'); const pExp=p.reduce((a,t)=>a+nextBet(t),0), bExp=b.reduce((a,t)=>a+nextBet(t),0); $('playerMicro').textContent=p.length?p.map(t=>`${t.num} S${stepOf(t)} ${kfmt(nextBet(t))}`).join('  '):'—'; $('bankerMicro').textContent=b.length?b.map(t=>`${t.num} S${stepOf(t)} ${kfmt(nextBet(t))}`).join('  '):'—'; $('playerGrouped').textContent=buildGrouped('player'); $('bankerGrouped').textContent=buildGrouped('banker'); $('totalGrouped').textContent=kfmt(pExp+bExp); $('roundCount').textContent=s.rounds.length; $('pActive').textContent=p.length; $('bActive').textContent=b.length; $('pNext').textContent=money(pExp); $('bNext').textContent=money(bExp); $('pExposure').textContent=money(pExp); $('bExposure').textContent=money(bExp); $('tExposure').textContent=money(pExp+bExp); $('last5').textContent=s.rounds.length?s.rounds.slice(-5).map(r=>`P${r.p}-B${r.b}`).join('  '):'—'; const risk=Math.min(100,((pExp+bExp)/Math.max(1,s.bankroll))*100); $('riskFill').style.width=Math.max(4,risk)+'%'; $('riskFill').style.background=risk<10?'#2fd07a':risk<25?'#f0c450':'#ef5d66'; $('riskText').textContent=risk<10?'LOW':risk<25?'MED':'HIGH';}
+function renderPlay(){
+ $('startText').textContent=s.settings.startingBankroll;
+ $('bankrollText').textContent=s.bankroll;
+
+ const p=active('player'), b=active('banker');
+ const pExp=p.reduce((a,t)=>a+nextBet(t),0), bExp=b.reduce((a,t)=>a+nextBet(t),0);
+
+ // Small duplicate tracker under Player / Banker title removed.
+ // Safe even if those HTML elements were deleted.
+ const playerMicro = $('playerMicro');
+ const bankerMicro = $('bankerMicro');
+ if(playerMicro) playerMicro.textContent='';
+ if(bankerMicro) bankerMicro.textContent='';
+
+ $('playerGrouped').textContent=buildGrouped('player');
+ $('bankerGrouped').textContent=buildGrouped('banker');
+ $('totalGrouped').textContent=kfmt(pExp+bExp);
+ $('roundCount').textContent=s.rounds.length;
+ $('pActive').textContent=p.length;
+ $('bActive').textContent=b.length;
+ $('pNext').textContent=money(pExp);
+ $('bNext').textContent=money(bExp);
+ $('pExposure').textContent=money(pExp);
+ $('bExposure').textContent=money(bExp);
+ $('tExposure').textContent=money(pExp+bExp);
+ $('last5').textContent=s.rounds.length?s.rounds.slice(-5).map(r=>`P${r.p}-B${r.b}`).join('  '):'—';
+
+ const risk=Math.min(100,((pExp+bExp)/Math.max(1,s.bankroll))*100);
+ $('riskFill').style.width=Math.max(4,risk)+'%';
+ $('riskFill').style.background=risk<10?'#2fd07a':risk<25?'#f0c450':'#ef5d66';
+ $('riskText').textContent=risk<10?'LOW':risk<25?'MED':'HIGH';
+}
 function tileHTML(t){let cls='inactive', state='INACTIVE', bet='LOCKED'; if(t.status==='active'){cls='active-t'; state=t.recoveryMode?'ATTACK':'ACTIVE'; bet=`S${stepOf(t)} • ${money(nextBet(t))}`;} else if(t.capHit){cls='cap'; state='CAP HIT'; bet=t.secondRepeatTriggered?'USED':'WAITING';} else if(t.status==='excluded'){cls='excluded'; state='EXCLUDED'; bet=t.closedProfit?`WIN ${money(t.closedProfit)}`:'LOCKED';} return `<div class="tile ${cls}"><div class="num">${t.num}</div><div class="state">${state}</div><div class="bet">${bet}</div></div>`;}
 function renderBoard(){ $('playerBoard').innerHTML=Array.from({length:9},(_,i)=>tileHTML(s.player[i+1])).join(''); $('bankerBoard').innerHTML=Array.from({length:9},(_,i)=>tileHTML(s.banker[i+1])).join(''); }
 function renderHistory(){ const body=$('historyBody'); if(!s.rounds.length){body.innerHTML='<tr><td colspan="7" class="muted">No rounds yet</td></tr>'; return;} body.innerHTML=[...s.rounds].reverse().map((r,idx)=>`<tr><td>${s.rounds.length-idx}</td><td>${r.p}</td><td>${r.b}</td><td>${money(r.pNet)}</td><td>${money(r.bNet)}</td><td>${money(r.total)}</td><td>${money(r.bankroll)}</td></tr>`).join(''); }
